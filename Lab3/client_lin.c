@@ -23,8 +23,12 @@ void run(struct IpcData *data)
 		read(data->fd_fifo, &buffer, 100) ;
 		close(data->fd_fifo);
 		if(!strcmp(buffer, "exit\0"))
+		{
+			semop(data->semid, &data->rel_res, 1);
 			break;
-		else puts(buffer);
-		semop(data->semid, &data->rel_res, 1); 	
+		} 
+		puts(buffer);
+		semop(data->semid, &data->rel_res, 1);
+		 	
 	}
 }	

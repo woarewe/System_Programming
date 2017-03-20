@@ -16,9 +16,10 @@
 
 #else
 
+#include <conio.h>
+#include <Windows.h>
+
 #endif
-
-
 
 struct IpcData 
 {
@@ -28,12 +29,12 @@ struct IpcData
 	struct sembuf lock_res;
 	struct sembuf rel_res;
 #else
-
-
+	HANDLE semaphore;
+	HANDLE channel;
 #endif
 };
 
-
 void connecting(struct IpcData *);
 void run(struct IpcData *);
+void clean(struct IpcData *);
 #endif

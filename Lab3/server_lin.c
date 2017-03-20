@@ -35,3 +35,9 @@ void run(struct IpcData *data)
 			break; 	
 	}
 }	
+
+void clean(struct IpcData *data)
+{
+	semctl(data->semid, 0, IPC_RMID);
+	unlink("fifo1");
+}

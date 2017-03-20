@@ -7,6 +7,6 @@ int main()
 
 	connecting(&data);
 	run(&data);
-	
+	clean(&data);	
 	return 0;
 }

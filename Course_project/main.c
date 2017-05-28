@@ -13,6 +13,10 @@ int main(int argc, char **argv)
     int choise;
 
     struct device dev;
+    memset((void *)&dev, 0, sizeof(struct device));
+
+    get_geometry(argv[1], &dev);
+
     dev.fd = open(argv[1], O_RDONLY);
     if(!dev.fd)
     {
@@ -21,10 +25,10 @@ int main(int argc, char **argv)
     }
 
     check_mbr(&dev);
+    check_free_space(&dev);
     if(dev.type == GPT)
     {
         // ...
-        close(dev.fd);
     }
 
     printf("Partition table creator 1.0");
@@ -48,7 +52,11 @@ int main(int argc, char **argv)
             if(dev.type == GPT) printf("GPT\n");
                     else printf("MBR\n");
             printf("\n");
-            if(dev.type == MBR) show_mbr_table(&dev);
+            if(dev.type == MBR)
+            {
+                show_mbr_table(&dev);
+                show_mbr_free_space(&dev);
+            }
         }
             break;
         case 2:

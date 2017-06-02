@@ -13,28 +13,19 @@ int main(int argc, char **argv)
     int choise;
 
     struct device dev;
-    memset((void *)&dev, 0, sizeof(struct device));
 
-    get_geometry(argv[1], &dev);
 
-    dev.fd = open(argv[1], O_RDONLY);
-    if(!dev.fd)
-    {
-        printf("Cannot open file %s \n", argv[1]);
-        return 1;
-    }
-
-    check_mbr(&dev);
-    check_free_space(&dev);
     if(dev.type == GPT)
     {
         // ...
     }
 
-    printf("Partition table creator 1.0");
+    printf("Partition table creator 1.1.0");
 
     while(1)
     {
+        if( init(&dev, argv[1]) < 0) return -1;
+
         printf("\n");
         printf("1. Get informaition about partition table.\n");
         printf("2. Add new section\n");
@@ -62,6 +53,18 @@ int main(int argc, char **argv)
         case 2:
         {
         }
+        case 3:
+        {
+
+            int number;
+            printf("Enter please partition number: ");
+            scanf("%d", &number);
+            dev.fd = open(argv[1], O_WRONLY);
+            if(dev.type == MBR)
+                delete_partition(&dev, number);
+            close(dev.fd);
+        }
+            break;
             break;
         case 0:
         {

@@ -15,7 +15,8 @@ void read_main_table(struct device *dev)
     for(int i = 0; i < 4; ++i)
     {
         if(dev->pt_table[i].type_part == EXT)
-             read_ext_table(dev, (__u64)dev->pt_table[i].sect_before * 512);
+             //read_ext_table(dev, (__u64)dev->pt_table[i].sect_before * 512);
+             my_ext_read(dev, i);
         if(dev->pt_table[i].type_part!= FREE) dev->primary_number++;
     }
     close(dev->fd);
@@ -37,12 +38,41 @@ void read_ext_table(struct device *dev, __u64 seek)
         memcpy((void *)&dev->pt_table[num], smbr + 0x1BE, 16 * 2);
 
          dev->pt_table[num].sect_before += (seek / 512);
+
          if(dev->pt_table[num].type_part) dev->logical_number++;
          if(!(dev->pt_table[num + 1].type_part)) break;
 
-         seek = ((__u64)(dev->pt_table[num].sect_before + dev->pt_table[num].sect_total)) * 512;
+         seek = (__u64)(dev->pt_table[num + 1].sect_before - dev->pt_table[4].sect_before  ) * 512;
 
          num++;
+    }
+}
+
+void my_ext_read(struct device * dev,int ext_index)
+{
+    int num = 4;
+
+    __u8 smbr[512];
+
+    __u32 seek = 0;
+
+    while(1)
+    {
+        memset((void *)smbr, 0, 512);
+        pread(dev->fd, (void *)smbr, 512, (dev->pt_table[num].sect_before + (__u64)dev->pt_table[ext_index].sect_before) * 512);
+
+        memset((void *)&dev->pt_table[num], 0, 16 * 2);
+        memcpy((void *)&dev->pt_table[num], smbr + 0x1BE, 16 * 2);
+
+        dev->pt_table[num].sect_before += (dev->pt_table[ext_index].sect_before + seek);
+
+        if(dev->pt_table[num].type_part) dev->logical_number++;
+        if(!(dev->pt_table[num + 1].type_part)) break;
+
+        num++;
+
+        seek = dev->pt_table[num].sect_before;
+
     }
 }
 
@@ -143,6 +173,73 @@ void check_free_space(struct device *dev)
 
     for(int i = 0; i < 4; i++)
     {
+        if(dev->pt_table[i].type_part == EXT)
+        {
+            dev->log_free_last = 1;
+            dev->logical_free_number = 1;
+            dev->log_free[0].sect_before = dev->pt_table[i].sect_before + 2048;
+            dev->log_free[0].sect_total = dev->pt_table[i].sect_total - 2048 * dev->logical_number;
+            dev->log_free[0].size = (__u64)dev->log_free[0].sect_total * 512 / 1024 / 1024;
+
+            for(int k = 4; k < 4 + dev->logical_number; k++)
+            {
+                if(dev->pt_table[k].type_part != FREE)
+                {
+                    for(int j = 0; j < dev->log_free_last; j++)
+                    {
+                        if(dev->pt_table[k].sect_before == dev->log_free[j].sect_before)
+                        {
+                            sector.sect_before = dev->pt_table[k].sect_before + dev->pt_table[k].sect_total + 2048;
+                            sector.sect_total = dev->log_free[j].sect_total - dev->pt_table[k].sect_total;
+                            sector.size = (__u64)sector.sect_total * 512 / 1024 / 1024;
+                            if(!sector.sect_total)
+                            {
+                                dev->log_free[j].sect_before = 0;
+                                dev->log_free[j].sect_total = 0;
+                                dev->log_free[j].size = 0;
+                                dev->logical_free_number--;
+                            }
+                            else
+                                dev->log_free[j] = sector;
+                        }
+                        else
+                        if(dev->pt_table[k].sect_before + dev->pt_table[k].sect_total == dev->log_free[j].sect_before + dev->log_free[j].sect_total)
+                        {
+                            sector.sect_before = dev->log_free[j].sect_before;
+                            sector.sect_total = dev->log_free[j].sect_total - dev->pt_table[k].sect_total;
+                            sector.size = (__u64)sector.sect_total * 512 / 1024 / 1024;
+                            if(!sector.sect_total)
+                            {
+                                dev->log_free[j].sect_before = 0;
+                                dev->log_free[j].sect_total = 0;
+                                dev->log_free[j].size = 0;
+                                dev->logical_free_number--;
+                            }
+                            else
+                                dev->log_free[j] = sector;
+                        }
+                        else
+                        if((dev->log_free[j].sect_before < dev->pt_table[k].sect_before) &&
+                                (dev->pt_table[k].sect_before + dev->pt_table[k].sect_total < dev->log_free[j].sect_before + dev->log_free[j].sect_total))
+                        {
+                            sector.sect_before = dev->pt_table[k].sect_before + dev->pt_table[k].sect_total;
+                            sector.sect_total = (dev->log_free[j].sect_before + dev->log_free[j].sect_total) -
+                                    (dev->pt_table[k].sect_before + dev->pt_table[k].sect_total);
+                            sector.size = (__u64)sector.sect_total * 512 / 1024 / 1024;
+
+                            dev->log_free[j].sect_total -= (dev->pt_table[k].sect_total + sector.sect_total);
+                            dev->log_free[j].size = (__u64)dev->log_free[j].sect_total * 512 / 1024 / 1024;
+
+                            dev->log_free[dev->log_free_last] = sector;
+
+                            dev->log_free_last++;
+                            dev->logical_free_number++;
+                        }
+
+                    }
+                }
+            }
+        }
         if(dev->pt_table[i].type_part != FREE)
         {
             for(int j = 0; j < dev->prm_free_last; j++)
@@ -214,7 +311,7 @@ void get_geometry(const char *path, struct device *dev)
 void show_mbr_free_space(struct device *dev)
 {
     printf("\n");
-    if(!dev->primary_free_number)
+    if(!dev->primary_free_number && !dev->logical_free_number)
     {
         printf("Device don't have free space!!!\n");
         return;
@@ -224,8 +321,8 @@ void show_mbr_free_space(struct device *dev)
     printf("%3s\t%10s\t%10s\t%10s\t%5s\t%8s\n","Num", "Start", "Total", "Size(MB)", "TFS", "Type");
     printf("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 
+    if(dev->primary_free_number)
     for(int i = 0; i < dev->prm_free_last; i++)
-    {
         if(dev->prm_free[i].sect_total)
         {
             printf("#%d\t", i + 1);
@@ -234,8 +331,62 @@ void show_mbr_free_space(struct device *dev)
             printf("%10d\t", dev->prm_free[i].size);
             printf("%5s\t", "FREE");
             printf("%8s\t", "primary");
+            printf("\n");
         }
-        printf("\n");
-    }
+
+    if(dev->logical_free_number)
+    for(int i = 0; i < dev->log_free_last; i++)
+        if(dev->log_free[i].sect_total)
+        {
+            printf("#%d\t", i + dev->primary_free_number + 1);
+            printf("%10d\t", dev->log_free[i].sect_before);
+            printf("%10d\t", dev->log_free[i].sect_total);
+            printf("%10d\t", dev->log_free[i].size);
+            printf("%5s\t", "FREE");
+            printf("%8s\t", "logical");
+            printf("\n");
+        }
+
+
 }
 
+int delete_partition(struct device *dev, int number)
+{
+    if(number <= 0)
+    {
+        printf("Error: negative number of partition\n");
+        return -1;
+    }
+
+    if(number > 3)
+    {
+        printf("Can't delete logical partition.\n");
+        return -1;
+    }
+
+    if(dev->pt_table[number - 1].type_part == FREE)
+    {
+        printf("Can't delete empty partition\n");
+        return -1;
+    }
+
+    memset((void *)&dev->pt_table[number - 1], 0, sizeof(struct mbr_pt_struct));
+    pwrite(dev->fd, dev->pt_table, 64, 446);
+
+    return 0;
+}
+
+int init(struct device *dev, const char * path)
+{
+    memset((void *)dev, 0, sizeof(struct device));
+    get_geometry(path, dev);
+    dev->fd = open(path, O_RDONLY);
+    if(!dev->fd)
+    {
+        printf("Cannot open file %s \n", path);
+        return - 1;
+    }
+    check_mbr(dev);
+    check_free_space(dev);
+    return 0;
+}

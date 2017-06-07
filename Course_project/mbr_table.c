@@ -15,11 +15,9 @@ void read_main_table(struct device *dev)
     for(int i = 0; i < 4; ++i)
     {
         if(dev->pt_table[i].type_part == EXT)
-             //read_ext_table(dev, (__u64)dev->pt_table[i].sect_before * 512);
              my_ext_read(dev, i);
         if(dev->pt_table[i].type_part!= FREE) dev->primary_number++;
     }
-    close(dev->fd);
     return;
 }
 
@@ -76,6 +74,121 @@ void my_ext_read(struct device * dev,int ext_index)
     }
 }
 
+int mbr_create_extended(struct device *dev, size_t size, int *blocks, int number, int index)
+{
+    struct mbr_pt_struct new_partition;
+    memset((void *)&new_partition, 0, sizeof(struct mbr_pt_struct));
+    new_partition.bootable = 0;
+    new_partition.sect_before = dev->prm_free[index].sect_before;
+    new_partition.sect_total = (__u64)size * 1024 * 1024 / 512;
+    new_partition.type_part = EXT;
+
+    if(new_partition.sect_before >= LAST_CHS_SECTOR)
+    {
+        new_partition.start_part[0] = 0xFE;
+        new_partition.start_part[1] = 0xFF;
+        new_partition.start_part[2] = 0xFF;
+    }
+    else lba_to_chs(new_partition.start_part, new_partition.sect_before, dev->geo);
+
+    if(new_partition.sect_before + new_partition.sect_total - 1 >= LAST_CHS_SECTOR)
+    {
+        new_partition.end_part[0] = 0xFE;
+        new_partition.end_part[1] = 0xFF;
+        new_partition.end_part[2] = 0xFF;
+    }
+    else lba_to_chs(new_partition.end_part, new_partition.sect_before + new_partition.sect_total - 1, dev->geo);
+
+    int i = 0;
+    while(dev->pt_table[i].type_part) i++;
+
+    memcpy((void *)&dev->pt_table[i], (void *)&new_partition, sizeof(struct mbr_pt_struct));
+
+    dev->fd = open(dev->path, O_WRONLY);
+    pwrite(dev->fd, dev->pt_table, 64, 446);
+    close(dev->fd);
+
+    if(number)
+    {
+        __u8 smbr[512];
+
+        __u32 extended_seek = 0;
+
+
+        struct mbr_pt_struct ext_pt[2];
+
+        __u32 file_seek = 0;
+
+        for(int j = 0; j < number; j++)
+        {
+            memset((void *)smbr, 0, 512);
+            memset((void *)ext_pt, 0, sizeof(struct mbr_pt_struct) * 2);
+
+            ext_pt[0].bootable = 0;
+            ext_pt[0].sect_before = 2048;
+            ext_pt[0].sect_total = (__u64)blocks[j] * 1024 * 1024 / 512;
+            ext_pt[0].type_part = NTFS;
+
+            if(ext_pt[0].sect_before >= LAST_CHS_SECTOR)
+            {
+                ext_pt[0].start_part[0] = 0xFE;
+                ext_pt[0].start_part[1] = 0xFF;
+                ext_pt[0].start_part[2] = 0xFF;
+            }
+            else lba_to_chs(ext_pt[0].start_part, ext_pt[0].sect_before, dev->geo);
+
+            if(ext_pt[0].sect_before + ext_pt[0].sect_total - 1 >= LAST_CHS_SECTOR)
+            {
+                ext_pt[0].end_part[0] = 0xFE;
+                ext_pt[0].end_part[1] = 0xFF;
+                ext_pt[0].end_part[2] = 0xFF;
+            }
+            else lba_to_chs(ext_pt[0].end_part, ext_pt[0].sect_before + ext_pt[0].sect_total - 1, dev->geo);
+
+            if(j < number - 1)
+            {
+                extended_seek += (ext_pt[0].sect_before + ext_pt[0].sect_total);
+                ext_pt[1].sect_before += extended_seek;
+                ext_pt[1].sect_total += (2048 + (__u64)blocks[j + 1] * 1024 * 1024 / 512);
+                ext_pt[1].bootable = 0;
+                ext_pt[1].type_part = EXT;
+
+                if(ext_pt[1].sect_before >= LAST_CHS_SECTOR)
+                {
+                    ext_pt[1].start_part[0] = 0xFE;
+                    ext_pt[1].start_part[1] = 0xFF;
+                    ext_pt[1].start_part[2] = 0xFF;
+                }
+                else lba_to_chs(ext_pt[1].start_part, ext_pt[1].sect_before, dev->geo);
+
+                if(ext_pt[1].sect_before + ext_pt[1].sect_total - 1 >= LAST_CHS_SECTOR)
+                {
+                    ext_pt[1].end_part[0] = 0xFE;
+                    ext_pt[1].end_part[1] = 0xFF;
+                    ext_pt[1].end_part[2] = 0xFF;
+                }
+                else lba_to_chs(ext_pt[1].end_part, ext_pt[1].sect_before + ext_pt[0].sect_total - 1, dev->geo);
+
+            }
+
+            memcpy((void *)(smbr + 0x1BE), (void *)ext_pt, 16 * 2);
+            smbr[510] = 0x55;
+            smbr[511] = 0xAA;
+            dev->fd = open(dev->path, O_WRONLY);
+            pwrite(dev->fd, (void *)smbr, 512, ((__u64)file_seek +  dev->pt_table[i].sect_before) * 512);
+            close(dev->fd);
+
+            file_seek = ext_pt[1].sect_before;
+
+        }
+    }
+
+    int num = 5;
+    for(int j = 0; j < number; j++)
+        create_file_system(dev->path, num++);
+    return 0;
+}
+
 void show_mbr_table(struct device *dev)
 {
 
@@ -113,6 +226,9 @@ void show_mbr_table(struct device *dev)
             case EXT:
                 printf("%5s\t", "EXT");
                 break;
+            case EXT4:
+                printf("%5s\t", "EXT4");
+                break;
             default:
                 printf("%5s\t", "UNDF");
             }
@@ -142,6 +258,9 @@ void show_mbr_table(struct device *dev)
                             printf("%5s\t", "FREE");
                         case EXT:
                             printf("%5s\t", "EXT");
+                            break;
+                        case EXT4:
+                            printf("%5s\t", "EXT4");
                             break;
                         default:
                             printf("%5s\t", "UNDF");
@@ -350,7 +469,7 @@ void show_mbr_free_space(struct device *dev)
 
 }
 
-int delete_partition(struct device *dev, int number)
+int mbr_delete_partition(struct device *dev, int number)
 {
     if(number <= 0)
     {
@@ -358,7 +477,7 @@ int delete_partition(struct device *dev, int number)
         return -1;
     }
 
-    if(number > 3)
+    if(number > 4)
     {
         printf("Can't delete logical partition.\n");
         return -1;
@@ -376,9 +495,11 @@ int delete_partition(struct device *dev, int number)
     return 0;
 }
 
-int init(struct device *dev, const char * path)
+int mbr_init(struct device *dev, const char * path)
 {
     memset((void *)dev, 0, sizeof(struct device));
+    dev->path = (char *)malloc(sizeof(strlen(path)));
+    strcpy(dev->path, path);
     get_geometry(path, dev);
     dev->fd = open(path, O_RDONLY);
     if(!dev->fd)
@@ -388,5 +509,193 @@ int init(struct device *dev, const char * path)
     }
     check_mbr(dev);
     check_free_space(dev);
+    close(dev->fd);
     return 0;
+}
+
+int mbr_create_new_partition(struct device *dev)
+{
+    int choise;
+    do
+    {
+        printf("Choise a type of new partition. \n");
+        printf("1. Primary\n");
+        printf("2. Extended\n");
+        printf("::> ");
+        scanf("%d", &choise);
+        printf("\n");
+        switch(choise)
+        {
+            case 1:
+        {
+            if(dev->primary_number == 4)
+            {
+                printf("Cannot create more primary partition\n");
+                return -1;
+            }
+
+            int size;
+            printf("Enter please size of new partition: ");
+            scanf("%d", &size);
+            mbr_create_primary(dev, size);
+            return 0;
+        }
+            break;
+        case 2:
+        {
+            if(dev->primary_number == 4)
+            {
+                printf("Cannot create more as 4 primary partition\n");
+                return -1;
+            }
+            if(dev->logical_number)
+            {
+                printf("Cannot create more as 1 extended partition\n");
+                return -1;
+            }
+
+
+            int size;
+            printf("Enter please size of new partition: ");
+            scanf("%d", &size);
+
+
+            int index = -1;
+            for(int i = 0; i < dev->primary_free_number; i++)
+             if(dev->prm_free[i].size >= (__u32)size)
+             {
+                 index = i;
+                 break;
+             }
+
+            if(index < 0)
+            {
+                printf("Not enough free space\n");
+                return -1;
+            }
+
+
+
+            int temp = size;
+
+            int *blocks = (int *)malloc(sizeof(int) * 20);
+
+            int number = 0;
+
+            while(1)
+            {
+                temp--;
+                printf("Free memory of extended partition: %d\n", temp);
+                printf("Add new logical partition\n");
+                printf("1. Yes\n2. No\n");
+
+                int choise;
+
+                while(1)
+                {
+                    scanf("%d", &choise);
+                    if(choise == 1 || choise == 2) break;
+                    else printf("Try again\n");
+                }
+
+                if(choise == 2)
+                    break;
+
+                while(1)
+                {
+                    printf("Enter please size of %d logical block: ", number + 1);
+                    scanf("%d", (int *)&blocks[number]);
+                    printf("\n");
+
+                    if(blocks[number] < 2 || blocks[number] > temp) printf("Try again\n");
+                    else break;
+                }
+
+                temp -=  blocks[number];
+                number++;
+
+                if(temp <= 0)
+                    break;
+
+            }
+            mbr_create_extended(dev,size, blocks, number, index);
+            return 0;
+        }
+            break;
+        default:
+            printf("Try again!\n");
+        }
+    } while(1);
+}
+
+int mbr_create_primary(struct device *dev, size_t size)
+{
+
+    int index = -1;
+    for(int i = 0; i < dev->primary_free_number; i++)
+     if(dev->prm_free[i].size >= size)
+     {
+         index = i;
+         break;
+     }
+
+    if(index < 0)
+    {
+        printf("Not enough free space\n");
+        return -1;
+    }
+
+    struct mbr_pt_struct new_partition;
+    memset((void *)&new_partition, 0, sizeof(struct mbr_pt_struct));
+
+    new_partition.bootable = 0;
+    new_partition.type_part = NTFS;
+    new_partition.sect_before = dev->prm_free[index].sect_before;
+    new_partition.sect_total = (__u64)size * 1024 * 1024 / 512;
+
+    if(new_partition.sect_before >= LAST_CHS_SECTOR)
+    {
+        new_partition.start_part[0] = 0xFE;
+        new_partition.start_part[1] = 0xFF;
+        new_partition.start_part[2] = 0xFF;
+    }
+    else lba_to_chs(new_partition.start_part, new_partition.sect_before, dev->geo);
+
+    if(new_partition.sect_before + new_partition.sect_total - 1 >= LAST_CHS_SECTOR)
+    {
+        new_partition.end_part[0] = 0xFE;
+        new_partition.end_part[1] = 0xFF;
+        new_partition.end_part[2] = 0xFF;
+    }
+    else lba_to_chs(new_partition.end_part, new_partition.sect_before + new_partition.sect_total - 1, dev->geo);
+
+
+    int number = 0;
+    while(dev->pt_table[number].type_part) number++;
+
+    memcpy((void *)&dev->pt_table[number], (void *)&new_partition, sizeof(struct mbr_pt_struct));
+
+    dev->fd = open(dev->path, O_WRONLY);
+    pwrite(dev->fd, dev->pt_table, 64, 446);
+    close(dev->fd);
+
+    create_file_system(dev->path, number + 1);
+    return 0;
+}
+
+void lba_to_chs(__u8 *chs, __u16 lba, struct hd_geometry geo)
+{
+    __u8 s = (lba % geo.sectors) + 1;
+    __u8 h = ((lba - (s - 1)) / geo.sectors) % geo.heads;
+    __u16 c = (lba - (s - 1) - h * geo.sectors) / (geo.sectors * geo.heads);
+
+    chs[0] = h;
+    chs[1] = s;
+    chs[2] = c;
+
+    struct __bit_16 *ptr_c = (struct __bit_16 *)&c;
+    struct __bit_8 *ptr_s = (struct __bit_8 *)&chs[1];
+
+    ptr_s->bit_6 = ptr_c->bit_8;
+    ptr_s->bit_7 = ptr_c->bit_9;
 }

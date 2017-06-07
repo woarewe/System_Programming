@@ -8,5 +8,5 @@ SOURCES += main.c \
     other.c
 
 HEADERS += \
-    mbr_table.h \
-    other.h
+    other.h \
+    mbr_table.h

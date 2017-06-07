@@ -1,4 +1,3 @@
-#include "other.h"
 #include "mbr_table.h"
 
 
@@ -24,13 +23,12 @@ int main(int argc, char **argv)
 
     while(1)
     {
-        if( init(&dev, argv[1]) < 0) return -1;
+        if( mbr_init(&dev, argv[1]) < 0) return -1;
 
         printf("\n");
         printf("1. Get informaition about partition table.\n");
         printf("2. Add new section\n");
         printf("3. Delete section\n");
-        printf("4. Resize section\n");
         printf("0. Exit\n");
         printf("::> ");
         scanf("%d", &choise);
@@ -52,7 +50,10 @@ int main(int argc, char **argv)
             break;
         case 2:
         {
+            if(dev.type == MBR)
+               mbr_create_new_partition(&dev);
         }
+            break;
         case 3:
         {
 
@@ -61,10 +62,9 @@ int main(int argc, char **argv)
             scanf("%d", &number);
             dev.fd = open(argv[1], O_WRONLY);
             if(dev.type == MBR)
-                delete_partition(&dev, number);
+                mbr_delete_partition(&dev, number);
             close(dev.fd);
         }
-            break;
             break;
         case 0:
         {
@@ -72,7 +72,7 @@ int main(int argc, char **argv)
             break;
         }
         default:
-            printf("Try again!!!");
+            printf("Try again!!!\n");
             break;
         }
     }

@@ -8,5 +8,5 @@ void gpt_show_table(struct device *);
 void gpt_check_free_space(struct device *);
 void gpt_show_free_space(struct device *);
 int gpt_delete_partition(struct device *, int);
-
+int gpt_create_partition(struct device *, int);
 #endif // GPT_TABLE_H

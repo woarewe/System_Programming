@@ -56,7 +56,11 @@ int main(int argc, char **argv)
                mbr_create_new_partition(&dev);
             else
             {
-                printf("%ld", sizeof(struct gpt_table_header));
+                int size;
+                printf("Enter please size of new partition: ");
+                scanf("%d", &size);
+                printf("\n");
+                gpt_create_partition(&dev, size);
             }
         }
             break;

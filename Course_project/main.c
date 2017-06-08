@@ -1,5 +1,5 @@
+#include "gpt_table.h"
 #include "mbr_table.h"
-
 
 int main(int argc, char **argv)
 {
@@ -13,17 +13,14 @@ int main(int argc, char **argv)
 
     struct device dev;
 
-
-    if(dev.type == GPT)
-    {
-        // ...
-    }
-
     printf("Partition table creator 1.1.0");
 
     while(1)
     {
         if( mbr_init(&dev, argv[1]) < 0) return -1;
+
+        if(dev.type == GPT)
+            gpt_read_table(&dev);
 
         printf("\n");
         printf("1. Get informaition about partition table.\n");
@@ -46,12 +43,21 @@ int main(int argc, char **argv)
                 show_mbr_table(&dev);
                 show_mbr_free_space(&dev);
             }
+            else
+            {
+                gpt_show_table(&dev);
+                gpt_show_free_space(&dev);
+            }
         }
             break;
         case 2:
         {
             if(dev.type == MBR)
                mbr_create_new_partition(&dev);
+            else
+            {
+                printf("%ld", sizeof(struct gpt_table_header));
+            }
         }
             break;
         case 3:
@@ -60,10 +66,13 @@ int main(int argc, char **argv)
             int number;
             printf("Enter please partition number: ");
             scanf("%d", &number);
-            dev.fd = open(argv[1], O_WRONLY);
             if(dev.type == MBR)
+            {
+                dev.fd = open(argv[1], O_WRONLY);
                 mbr_delete_partition(&dev, number);
-            close(dev.fd);
+                close(dev.fd);
+            }
+            else gpt_delete_partition(&dev, number - 1);
         }
             break;
         case 0:

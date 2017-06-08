@@ -537,6 +537,13 @@ int mbr_create_new_partition(struct device *dev)
             int size;
             printf("Enter please size of new partition: ");
             scanf("%d", &size);
+
+            if(size < 2)
+            {
+                printf("Minimus size 2 MB. \n");
+                return -1;
+            }
+
             mbr_create_primary(dev, size);
             return 0;
         }
@@ -558,6 +565,11 @@ int mbr_create_new_partition(struct device *dev)
             int size;
             printf("Enter please size of new partition: ");
             scanf("%d", &size);
+            if(size < 2)
+            {
+                printf("Minimus size 2 MB. \n");
+                return -1;
+            }
 
 
             int index = -1;

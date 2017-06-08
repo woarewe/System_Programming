@@ -15,38 +15,15 @@ void read_main_table(struct device *dev)
     for(int i = 0; i < 4; ++i)
     {
         if(dev->pt_table[i].type_part == EXT)
-             my_ext_read(dev, i);
+             read_extended_table(dev, i);
         if(dev->pt_table[i].type_part!= FREE) dev->primary_number++;
     }
     return;
 }
 
-void read_ext_table(struct device *dev, __u64 seek)
-{
-    int num = 4;
 
-    __u8 smbr[512];
 
-    while(1)
-    {
-        memset((void *)smbr, 0, 512);
-        pread(dev->fd, (void *)smbr, 512, seek);
-
-        memset((void *)&dev->pt_table[num], 0, 16 * 2);
-        memcpy((void *)&dev->pt_table[num], smbr + 0x1BE, 16 * 2);
-
-         dev->pt_table[num].sect_before += (seek / 512);
-
-         if(dev->pt_table[num].type_part) dev->logical_number++;
-         if(!(dev->pt_table[num + 1].type_part)) break;
-
-         seek = (__u64)(dev->pt_table[num + 1].sect_before - dev->pt_table[4].sect_before  ) * 512;
-
-         num++;
-    }
-}
-
-void my_ext_read(struct device * dev,int ext_index)
+void read_extended_table(struct device * dev,int ext_index)
 {
     int num = 4;
 

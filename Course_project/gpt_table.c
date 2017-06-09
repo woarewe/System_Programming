@@ -68,7 +68,7 @@ void gpt_check_free_space(struct device *dev)
     dev->gpt_free_number = 1;
     dev->gpt_free[0].sect_before = dev->first_sector;
     dev->gpt_free[0].sect_total = dev->last_sector - 2048 - dev->first_sector + 1;
-    dev->gpt_free[0].size = (__u64)dev->prm_free[0].sect_total * 512 / 1024 / 1024;
+    dev->gpt_free[0].size = (__u64)dev->gpt_free[0].sect_total * 512 / 1024 / 1024;
 
     struct free_memory sector;
     memset((void *)&sector, 0, sizeof(struct free_memory));
